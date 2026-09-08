@@ -32,11 +32,36 @@ const addBtn = document.getElementById("add-btn");
 const logListEl = document.getElementById("log-list");
 const logEmptyEl = document.getElementById("log-empty");
 
+const goalDisplayEl = document.getElementById("goal-display");
+const editGoalBtn = document.getElementById("edit-goal-btn");
+const openCalendarBtn = document.getElementById("open-calendar-btn");
+const goalForm = document.getElementById("goal-form");
+const goalInput = document.getElementById("goal-input");
+const cancelGoalBtn = document.getElementById("cancel-goal-btn");
+
+const calendarView = document.getElementById("calendar-view");
+const backToTrackerBtn = document.getElementById("back-to-tracker-btn");
+const calendarGoalDisplayEl = document.getElementById("calendar-goal-display");
+const prevMonthBtn = document.getElementById("prev-month-btn");
+const nextMonthBtn = document.getElementById("next-month-btn");
+const calendarTitleEl = document.getElementById("calendar-title");
+const calendarGridEl = document.getElementById("calendar-grid");
+const dayDetailEl = document.getElementById("day-detail");
+const dayDetailTitleEl = document.getElementById("day-detail-title");
+const dayDetailListEl = document.getElementById("day-detail-list");
+const dayDetailEmptyEl = document.getElementById("day-detail-empty");
+
 // ---- 상태 ----
 let foods = [];
 let selectedFood = null;
 let currentLogs = [];
 let currentUser = null;
+let currentGoal = null; // 하루 목표 칼로리 (kcal), 미설정 시 null
+
+const today = new Date();
+let calendarYear = today.getFullYear();
+let calendarMonth = today.getMonth() + 1; // 1~12
+let monthlyTotals = {}; // { "YYYY-MM-DD": totalCalories }
 
 // ---- 유틸 ----
 function round1(n) {
@@ -264,6 +289,160 @@ async function deleteLog(id) {
   await loadTodayLogs();
 }
 
+// ---- 목표 칼로리 ----
+function renderGoalDisplay() {
+  const text = currentGoal ? `목표: ${currentGoal}kcal` : "목표가 설정되지 않았어요";
+  goalDisplayEl.textContent = text;
+  calendarGoalDisplayEl.textContent = text;
+}
+
+function loadGoal(user) {
+  currentGoal = user.user_metadata?.daily_calorie_goal ?? null;
+  renderGoalDisplay();
+}
+
+async function saveGoal(value) {
+  const { data, error } = await client.auth.updateUser({ data: { daily_calorie_goal: value } });
+  if (error) {
+    console.error(error);
+    alert("목표 저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+    return;
+  }
+  currentGoal = data.user.user_metadata?.daily_calorie_goal ?? null;
+  renderGoalDisplay();
+  if (!calendarView.hidden) renderCalendar();
+}
+
+// ---- 캘린더 ----
+function getMonthRange(year, month) {
+  const start = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const end = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return { start, end, lastDay };
+}
+
+async function loadMonthLogs(year, month) {
+  const { start, end } = getMonthRange(year, month);
+  const { data, error } = await client
+    .from("logs")
+    .select("log_date, calories")
+    .eq("user_id", currentUser.id)
+    .gte("log_date", start)
+    .lte("log_date", end);
+
+  if (error) {
+    console.error(error);
+    monthlyTotals = {};
+    return;
+  }
+
+  monthlyTotals = {};
+  for (const row of data) {
+    monthlyTotals[row.log_date] = (monthlyTotals[row.log_date] || 0) + Number(row.calories);
+  }
+}
+
+function getDayStatus(dateStr) {
+  const total = monthlyTotals[dateStr];
+  if (total == null) return "none";
+  if (currentGoal == null) return "logged";
+  return total > currentGoal ? "over" : "within";
+}
+
+async function renderCalendar() {
+  calendarTitleEl.textContent = `${calendarYear}년 ${calendarMonth}월`;
+  await loadMonthLogs(calendarYear, calendarMonth);
+
+  calendarGridEl.innerHTML = "";
+
+  const firstWeekday = new Date(calendarYear, calendarMonth - 1, 1).getDay(); // 0=일
+  const { lastDay } = getMonthRange(calendarYear, calendarMonth);
+  const todayStr = getLocalDateString();
+
+  for (let i = 0; i < firstWeekday; i++) {
+    const empty = document.createElement("div");
+    empty.className = "day-cell day-empty-slot";
+    calendarGridEl.appendChild(empty);
+  }
+
+  for (let day = 1; day <= lastDay; day++) {
+    const dateStr = `${calendarYear}-${String(calendarMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const status = getDayStatus(dateStr);
+
+    const cell = document.createElement("div");
+    cell.className = "day-cell";
+    if (status !== "none") cell.classList.add("day-has-log");
+    if (status === "over") cell.classList.add("day-over");
+    if (dateStr === todayStr) cell.classList.add("day-today");
+
+    const numberEl = document.createElement("span");
+    numberEl.className = "day-number";
+    numberEl.textContent = day;
+    cell.appendChild(numberEl);
+
+    if (status !== "none") {
+      const calEl = document.createElement("span");
+      calEl.className = "day-calories";
+      calEl.textContent = `${monthlyTotals[dateStr]}kcal`;
+      cell.appendChild(calEl);
+    }
+
+    cell.addEventListener("click", () => openDayDetail(dateStr));
+    calendarGridEl.appendChild(cell);
+  }
+}
+
+async function openDayDetail(dateStr) {
+  const { data, error } = await client
+    .from("logs")
+    .select("*")
+    .eq("user_id", currentUser.id)
+    .eq("log_date", dateStr)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  dayDetailEl.hidden = false;
+  dayDetailTitleEl.textContent = `${dateStr} (총 ${monthlyTotals[dateStr] || 0}kcal)`;
+  dayDetailListEl.innerHTML = "";
+  dayDetailEmptyEl.hidden = data.length !== 0;
+
+  for (const log of data) {
+    const li = document.createElement("li");
+    li.className = "log-item";
+
+    const nameBox = document.createElement("div");
+    nameBox.className = "log-name";
+    nameBox.innerHTML = `<span class="log-food">${log.food_name}</span><span class="log-amount">${log.amount_g}g</span>`;
+
+    const nutritionBox = document.createElement("div");
+    nutritionBox.className = "log-nutrition";
+    nutritionBox.innerHTML = `<span class="log-calories">${log.calories}kcal</span><br>탄${log.carbs} · 단${log.protein} · 지${log.fat}`;
+
+    // 조회 전용 — 삭제 버튼 없음 (오늘이 아닌 날짜의 기록은 수정/삭제 불가)
+    li.appendChild(nameBox);
+    li.appendChild(nutritionBox);
+    dayDetailListEl.appendChild(li);
+  }
+}
+
+function switchToCalendarView() {
+  trackerView.hidden = true;
+  calendarView.hidden = false;
+  dayDetailEl.hidden = true;
+  calendarYear = today.getFullYear();
+  calendarMonth = today.getMonth() + 1;
+  renderCalendar();
+}
+
+function switchToTrackerView() {
+  calendarView.hidden = true;
+  trackerView.hidden = false;
+}
+
 // ---- 화면 전환 ----
 function showAuthView() {
   authView.hidden = false;
@@ -274,11 +453,14 @@ function showAuthView() {
 async function showTrackerView(user) {
   currentUser = user;
   authView.hidden = true;
+  calendarView.hidden = true;
   trackerView.hidden = false;
 
   userEmailEl.textContent = user.email;
   todayDateEl.textContent = getLocalDateString();
 
+  loadGoal(user);
+  goalForm.hidden = true;
   resetFoodInput();
   await loadTodayLogs();
 }
@@ -364,6 +546,48 @@ foodSearchInput.addEventListener("input", () => {
 amountInput.addEventListener("input", updatePreview);
 
 addBtn.addEventListener("click", addLog);
+
+// ---- 목표 칼로리 이벤트 ----
+editGoalBtn.addEventListener("click", () => {
+  goalInput.value = currentGoal ?? "";
+  goalForm.hidden = false;
+});
+
+cancelGoalBtn.addEventListener("click", () => {
+  goalForm.hidden = true;
+});
+
+goalForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const value = Number(goalInput.value);
+  if (!value || value <= 0) return;
+  await saveGoal(value);
+  goalForm.hidden = true;
+});
+
+// ---- 캘린더 이벤트 ----
+openCalendarBtn.addEventListener("click", switchToCalendarView);
+backToTrackerBtn.addEventListener("click", switchToTrackerView);
+
+prevMonthBtn.addEventListener("click", () => {
+  calendarMonth -= 1;
+  if (calendarMonth < 1) {
+    calendarMonth = 12;
+    calendarYear -= 1;
+  }
+  dayDetailEl.hidden = true;
+  renderCalendar();
+});
+
+nextMonthBtn.addEventListener("click", () => {
+  calendarMonth += 1;
+  if (calendarMonth > 12) {
+    calendarMonth = 1;
+    calendarYear += 1;
+  }
+  dayDetailEl.hidden = true;
+  renderCalendar();
+});
 
 // ---- 인증 상태 감지 ----
 client.auth.onAuthStateChange((event, session) => {

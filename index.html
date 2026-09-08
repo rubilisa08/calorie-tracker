@@ -44,6 +44,17 @@
       </header>
       <p id="today-date" class="today-date"></p>
 
+      <div class="goal-bar">
+        <span id="goal-display" class="goal-display"></span>
+        <button id="edit-goal-btn" type="button" class="link-btn">목표 수정</button>
+        <button id="open-calendar-btn" type="button" class="link-btn">📅 캘린더</button>
+      </div>
+      <form id="goal-form" class="goal-form" hidden>
+        <input id="goal-input" type="number" min="1" step="1" placeholder="하루 목표 칼로리 (kcal)" />
+        <button type="submit">저장</button>
+        <button type="button" id="cancel-goal-btn" class="secondary-btn">취소</button>
+      </form>
+
       <div class="summary-grid">
         <div class="summary-card">
           <span class="summary-label">칼로리</span>
@@ -87,6 +98,31 @@
       </div>
 
       <p class="disclaimer">※ 영양성분은 일반적인 평균값 기준 추정치이며 실제와 다를 수 있습니다.</p>
+    </section>
+
+    <!-- 캘린더 화면 -->
+    <section id="calendar-view" hidden>
+      <header class="tracker-header">
+        <button id="back-to-tracker-btn" type="button" class="link-btn">← 트래커로</button>
+        <span id="calendar-goal-display" class="goal-display"></span>
+      </header>
+
+      <div class="calendar-nav">
+        <button id="prev-month-btn" type="button" class="secondary-btn">◀</button>
+        <span id="calendar-title" class="calendar-title"></span>
+        <button id="next-month-btn" type="button" class="secondary-btn">▶</button>
+      </div>
+
+      <div class="calendar-weekdays">
+        <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+      </div>
+      <div id="calendar-grid" class="calendar-grid"></div>
+
+      <div id="day-detail" class="day-detail" hidden>
+        <p id="day-detail-title" class="day-detail-title"></p>
+        <ul id="day-detail-list" class="log-list"></ul>
+        <p id="day-detail-empty" class="empty" hidden>이 날은 기록이 없어요</p>
+      </div>
     </section>
   </main>
 
