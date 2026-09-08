@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>칼로리 트래커</title>
+  <link rel="stylesheet" href="style.css?v=1" />
+</head>
+<body>
+  <main>
+    <!-- 인증 화면 -->
+    <section id="auth-view">
+      <h1>칼로리 트래커</h1>
+
+      <form id="login-form" class="auth-form">
+        <input id="login-email" type="email" placeholder="이메일" autocomplete="email" required />
+        <input id="login-password" type="password" placeholder="비밀번호" autocomplete="current-password" required />
+        <button type="submit">로그인</button>
+      </form>
+
+      <form id="signup-form" class="auth-form" hidden>
+        <input id="signup-email" type="email" placeholder="이메일" autocomplete="email" required />
+        <input id="signup-password" type="password" placeholder="비밀번호 (6자 이상)" autocomplete="new-password" required minlength="6" />
+        <input id="signup-password-confirm" type="password" placeholder="비밀번호 확인" autocomplete="new-password" required minlength="6" />
+        <button type="submit">회원가입</button>
+      </form>
+
+      <p id="auth-message" class="auth-message" hidden></p>
+
+      <p class="auth-toggle">
+        <a href="#" id="show-signup">계정이 없으신가요? 회원가입</a>
+        <a href="#" id="show-login" hidden>이미 계정이 있으신가요? 로그인</a>
+      </p>
+    </section>
+
+    <!-- 트래커 화면 -->
+    <section id="tracker-view" hidden>
+      <header class="tracker-header">
+        <h1>칼로리 트래커</h1>
+        <div class="header-right">
+          <span id="user-email" class="user-email"></span>
+          <button id="logout-btn" type="button">로그아웃</button>
+        </div>
+      </header>
+      <p id="today-date" class="today-date"></p>
+
+      <div class="summary-grid">
+        <div class="summary-card">
+          <span class="summary-label">칼로리</span>
+          <span class="summary-value"><span id="sum-calories">0</span> <span class="summary-unit">kcal</span></span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">탄수화물</span>
+          <span class="summary-value"><span id="sum-carbs">0</span> <span class="summary-unit">g</span></span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">단백질</span>
+          <span class="summary-value"><span id="sum-protein">0</span> <span class="summary-unit">g</span></span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">지방</span>
+          <span class="summary-value"><span id="sum-fat">0</span> <span class="summary-unit">g</span></span>
+        </div>
+      </div>
+
+      <div class="input-card">
+        <input id="food-search" type="text" placeholder="음식 이름 검색 (예: 닭가슴살)" autocomplete="off" />
+        <ul id="search-results" class="search-results"></ul>
+
+        <div id="selected-food" class="selected-food" hidden>
+          <p id="selected-food-name" class="selected-food-name"></p>
+          <p id="selected-food-base" class="selected-food-base"></p>
+          <label class="amount-label">
+            섭취량
+            <input id="amount-input" type="number" min="1" step="1" />
+            g
+          </label>
+          <p id="preview" class="preview"></p>
+          <button id="add-btn" type="button" disabled>기록에 추가</button>
+        </div>
+      </div>
+
+      <div class="log-section">
+        <h2>오늘의 기록</h2>
+        <ul id="log-list" class="log-list"></ul>
+        <p id="log-empty" class="empty" hidden>오늘 기록된 음식이 없어요</p>
+      </div>
+
+      <p class="disclaimer">※ 영양성분은 일반적인 평균값 기준 추정치이며 실제와 다를 수 있습니다.</p>
+    </section>
+  </main>
+
+  <!-- Supabase JS 라이브러리 (CDN, 빌드 도구 불필요) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabaseClient.js?v=1"></script>
+  <script src="app.js?v=1"></script>
+</body>
+</html>

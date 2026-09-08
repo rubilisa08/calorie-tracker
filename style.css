@@ -1,0 +1,319 @@
+[hidden] {
+  display: none !important;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  background: #f4f5f7;
+  display: flex;
+  justify-content: center;
+  padding: 40px 16px;
+  color: #1d2939;
+}
+
+main {
+  width: 100%;
+  max-width: 560px;
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+h1 {
+  font-size: 20px;
+  margin: 0 0 16px;
+}
+
+h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+  color: #344054;
+}
+
+button {
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #4338ca;
+}
+
+button:disabled {
+  background: #c7cad1;
+  cursor: not-allowed;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+/* 인증 화면 */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.auth-message {
+  font-size: 13px;
+  color: #d92d20;
+  background: #fef3f2;
+  border: 1px solid #fecdca;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.auth-toggle {
+  font-size: 13px;
+  text-align: center;
+}
+
+.auth-toggle a {
+  color: #4f46e5;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.auth-toggle a:hover {
+  text-decoration: underline;
+}
+
+/* 트래커 화면 */
+.tracker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-email {
+  font-size: 12px;
+  color: #667085;
+  word-break: break-all;
+}
+
+.today-date {
+  font-size: 12px;
+  color: #98a2b3;
+  margin: 0 0 16px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: #f4f5f7;
+  border-radius: 8px;
+  padding: 10px 4px;
+}
+
+.summary-label {
+  font-size: 11px;
+  color: #667085;
+}
+
+.summary-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1d2939;
+}
+
+.summary-unit {
+  font-size: 10px;
+  font-weight: 400;
+  color: #98a2b3;
+}
+
+.input-card {
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 20px;
+}
+
+.search-results {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.search-results li {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.search-results li:hover {
+  background: #eef0ff;
+}
+
+.search-results .result-meta {
+  color: #98a2b3;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.search-empty {
+  color: #98a2b3;
+  font-size: 12px;
+  padding: 8px 2px;
+}
+
+.selected-food {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #eaecf0;
+}
+
+.selected-food-name {
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+
+.selected-food-base {
+  font-size: 12px;
+  color: #98a2b3;
+  margin: 0 0 10px;
+}
+
+.amount-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.amount-label input {
+  width: 90px;
+}
+
+.preview {
+  font-size: 13px;
+  color: #4338ca;
+  margin: 0 0 10px;
+}
+
+.log-section {
+  margin-bottom: 16px;
+}
+
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.log-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.log-item .log-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.log-item .log-food {
+  font-weight: 600;
+  display: block;
+}
+
+.log-item .log-amount {
+  font-size: 11px;
+  color: #98a2b3;
+}
+
+.log-item .log-nutrition {
+  font-size: 11px;
+  color: #667085;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.log-item .log-calories {
+  font-weight: 600;
+  color: #1d2939;
+}
+
+.delete-btn {
+  background: transparent;
+  color: #98a2b3;
+  padding: 2px 6px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.delete-btn:hover {
+  background: #fee4e2;
+  color: #d92d20;
+}
+
+.empty {
+  color: #c0c6d0;
+  font-size: 12px;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.disclaimer {
+  font-size: 11px;
+  color: #98a2b3;
+  text-align: center;
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  main {
+    padding: 18px;
+  }
+
+  .summary-value {
+    font-size: 13px;
+  }
+}
