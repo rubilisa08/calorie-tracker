@@ -321,3 +321,4 @@ async function deleteLog(logId) {
 - 실시간 동기화: Supabase Realtime 구독(`supabase.channel(...)`)으로 기기 간 즉시 반영 가능.
 - 외부 영양성분 API로 전환 시 `foods.json` 로딩 부분만 API 호출로 교체하면 되도록 검색/계산 로직과 데이터 소스를 분리해서 구현.
 - 날짜별 히스토리: `log_date`로 이미 구조화되어 있으므로 조회 UI(달력, 기간 선택)만 추가하면 됨.
+- 사진 기반 음식 인식: 지금의 "정적 프론트엔드 + Supabase" 구조에 서버리스 함수(Supabase Edge Function 등)를 추가해, 이미지 업로드 → Edge Function이 비전 AI API를 호출(API 키는 서버 측에만 보관) → 인식된 음식명/추정 영양성분을 검색 결과처럼 반환 → 사용자가 확인/수정 후 기존 "기록에 추가" 흐름에 그대로 태우는 방식으로 확장 가능.
