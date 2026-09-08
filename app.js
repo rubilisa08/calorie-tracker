@@ -75,6 +75,10 @@ function getLocalDateString(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+function getFoodEmoji(foodId) {
+  return foods.find((f) => f.id === foodId)?.emoji || "🍽️";
+}
+
 function calcNutrition(food, amountG) {
   const ratio = amountG / 100;
   return {
@@ -134,7 +138,7 @@ function renderSearchResults(query) {
     const li = document.createElement("li");
 
     const name = document.createElement("span");
-    name.textContent = food.name;
+    name.textContent = `${food.emoji} ${food.name}`;
 
     const meta = document.createElement("span");
     meta.className = "result-meta";
@@ -153,7 +157,7 @@ function selectFood(food) {
   searchResultsEl.innerHTML = "";
 
   selectedFoodBox.hidden = false;
-  selectedFoodNameEl.textContent = food.name;
+  selectedFoodNameEl.textContent = `${food.emoji} ${food.name}`;
   selectedFoodBaseEl.textContent = `100g당 ${food.caloriesPer100g}kcal · 탄${food.carbsPer100g}g · 단${food.proteinPer100g}g · 지${food.fatPer100g}g`;
 
   amountInput.value = food.commonServingG;
@@ -212,7 +216,7 @@ function renderLogs() {
 
     const nameBox = document.createElement("div");
     nameBox.className = "log-name";
-    nameBox.innerHTML = `<span class="log-food">${log.food_name}</span><span class="log-amount">${log.amount_g}g</span>`;
+    nameBox.innerHTML = `<span class="log-food">${getFoodEmoji(log.food_id)} ${log.food_name}</span><span class="log-amount">${log.amount_g}g</span>`;
 
     const nutritionBox = document.createElement("div");
     nutritionBox.className = "log-nutrition";
@@ -416,7 +420,7 @@ async function openDayDetail(dateStr) {
 
     const nameBox = document.createElement("div");
     nameBox.className = "log-name";
-    nameBox.innerHTML = `<span class="log-food">${log.food_name}</span><span class="log-amount">${log.amount_g}g</span>`;
+    nameBox.innerHTML = `<span class="log-food">${getFoodEmoji(log.food_id)} ${log.food_name}</span><span class="log-amount">${log.amount_g}g</span>`;
 
     const nutritionBox = document.createElement("div");
     nutritionBox.className = "log-nutrition";
