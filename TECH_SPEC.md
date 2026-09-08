@@ -4,8 +4,13 @@
 
 ## 0. 문서 정보
 - 작성일: 2026-09-08
-- 버전: v2.0 — Supabase Auth + DB 반영
-- 전제: 회원가입/로그인은 Supabase Auth에 위임, 음식 기록(logs)은 Supabase Postgres DB에 사용자별로 저장
+- 버전: v3.0 — 목표 칼로리 + 월간 캘린더 반영
+- 전제: 회원가입/로그인은 Supabase Auth에 위임, 음식 기록(logs)은 Supabase Postgres DB에 사용자별로 저장, 목표 칼로리는 Supabase Auth user metadata에 저장
+
+### v3.0 변경 요약 (PRD v4.0 대응)
+- 목표 칼로리(하루 총 칼로리 단일 값)를 Supabase Auth의 `user_metadata`에 저장 — 별도 테이블/RLS 불필요.
+- 캘린더 화면을 위한 월 단위 로그 조회 쿼리 및 날짜별 색상(초과=노란색/이내=기본색) 판정 로직 추가.
+- 과거 날짜는 조회 전용이며 `logs` 테이블에 `update` 정책을 추가하지 않는 기존 방침을 유지.
 
 ---
 
@@ -131,8 +136,24 @@ create policy "delete own logs"
   using (auth.uid() = user_id);
 ```
 
-- `update` 정책은 MVP에서 기록 수정 기능이 없으므로 생성하지 않음(필요 시 추후 추가).
+- `update` 정책은 MVP에서 기록 수정 기능이 없으므로 생성하지 않음(필요 시 추후 추가). 캘린더에서 과거 날짜를 조회 전용으로 두는 PRD 8.1 제약과도 일치 — `logs`에 update 정책이 없으므로 과거 기록은 애초에 수정이 불가능하다.
 - RLS 없이 배포하면 **다른 사용자의 기록이 노출되는 심각한 보안 문제**가 발생하므로, 배포 전 반드시 RLS 활성화 + 정책 적용을 확인한다 (PRD 8.3 리스크 참고).
+
+### 3.5 목표 칼로리 — Supabase Auth user metadata
+새 테이블을 만들지 않고, 각 사용자의 `auth.users` 레코드에 딸린 `user_metadata`(JSON)에 목표 칼로리를 저장한다.
+
+```js
+// 설정/변경
+await client.auth.updateUser({ data: { daily_calorie_goal: 1800 } });
+
+// 조회 (현재 세션에서 바로 확인 가능, 별도 쿼리 불필요)
+const { data: { user } } = await client.auth.getUser();
+const goal = user.user_metadata.daily_calorie_goal ?? null; // 미설정 시 null
+```
+
+- `user_metadata`는 **본인만 자신의 것을 수정**할 수 있고(Supabase Auth가 세션의 소유자 검증을 내부적으로 처리), 다른 사용자의 값을 읽거나 쓸 방법이 없으므로 별도의 RLS 설정이 필요 없다.
+- 값이 없으면(`null`/`undefined`) "목표 미설정" 상태로 간주 — PRD US-12, US-14의 "목표 미설정 시 노란색 표시 안 함" 조건과 연결된다.
+- 목표를 변경해도 과거 `logs` 데이터 자체는 바뀌지 않으며, 캘린더가 매번 "현재 목표값"과 비교해 색상을 계산하므로 자연히 소급 적용된다 (PRD 8.1/8.3에 이미 알려진 제약으로 명시됨 — 별도 이력 테이블을 만들지 않는 가장 단순한 구현).
 
 ---
 
@@ -242,6 +263,79 @@ async function deleteLog(logId) {
 ### 5.8 날짜 기준
 - `log_date`는 서버(UTC) 기준이 아니라 **클라이언트 로컬 날짜**를 문자열로 계산해 전달 (`new Date().toLocaleDateString('sv-SE')` 형태로 `YYYY-MM-DD` 생성) — 사용자가 실제로 인지하는 "오늘"과 일치시키기 위함.
 
+### 5.9 목표 칼로리 설정/조회
+```js
+async function saveGoal(calorieGoal) {
+  const { error } = await client.auth.updateUser({ data: { daily_calorie_goal: calorieGoal } });
+  // 성공 시 화면의 목표 표시 및 캘린더 색상 즉시 재계산
+}
+
+function getGoal(user) {
+  return user.user_metadata?.daily_calorie_goal ?? null;
+}
+```
+
+### 5.10 월별 로그 조회 (캘린더용)
+한 번의 쿼리로 해당 월 전체 로그를 가져온 뒤, 클라이언트에서 날짜별로 묶어 합산한다 (하루씩 31번 조회하지 않음).
+
+```js
+function getMonthRange(year, month) {
+  // month: 1~12
+  const start = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, month, 0).getDate(); // 해당 월의 마지막 날짜
+  const end = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return { start, end };
+}
+
+async function loadMonthLogs(userId, year, month) {
+  const { start, end } = getMonthRange(year, month);
+  const { data, error } = await client
+    .from("logs")
+    .select("log_date, calories")
+    .eq("user_id", userId)
+    .gte("log_date", start)
+    .lte("log_date", end);
+
+  if (error) {
+    console.error(error);
+    return {};
+  }
+
+  // { "2026-09-01": 1650, "2026-09-02": 1900, ... } 형태로 날짜별 합계 생성
+  const dailyTotals = {};
+  for (const row of data) {
+    dailyTotals[row.log_date] = (dailyTotals[row.log_date] || 0) + Number(row.calories);
+  }
+  return dailyTotals;
+}
+```
+
+### 5.11 날짜별 색상 판정
+```js
+function getDayStatus(dateStr, dailyTotals, goal) {
+  const total = dailyTotals[dateStr];
+  if (total == null) return "none";          // 기록 없음 → 무강조
+  if (goal == null) return "logged";         // 목표 미설정 → 칼로리 숫자만 표시
+  return total > goal ? "over" : "within";   // 초과 → 노란색 / 이내 → 기본색
+}
+```
+- `over` → CSS 클래스 `.day-over` (노란색 배경)
+- `within` / `logged` → 기본 스타일
+- `none` → 날짜 숫자만, 칼로리 표시 없음
+
+### 5.12 특정 날짜 상세 조회 (읽기 전용)
+```js
+async function loadLogsForDate(userId, dateStr) {
+  const { data, error } = await client
+    .from("logs")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("log_date", dateStr)
+    .order("created_at", { ascending: true });
+  // 오늘 날짜가 아니면 렌더링 시 삭제 버튼을 생성하지 않음 (PRD US-15)
+}
+```
+
 ---
 
 ## 6. 화면별 상세 설계
@@ -266,6 +360,24 @@ async function deleteLog(logId) {
 ### 6.5 기록 리스트 영역
 - 오늘 추가한 항목을 `created_at` 순으로 렌더링
 - 각 행: 음식명 · 섭취량(g) · 칼로리 · 탄/단/지 · 삭제(×) 버튼 → 삭제 시 Supabase delete 호출
+
+### 6.6 목표 칼로리 입력
+- 트래커 헤더 또는 요약 영역 근처에 목표 칼로리 표시 + "수정" 버튼(또는 숫자 입력 필드 + 저장 버튼)
+- 목표 미설정 시 "목표를 설정해보세요" 안내와 함께 입력 유도
+- 저장 시 `saveGoal()` 호출 (5.9) → 성공 시 화면 표시 갱신, 캘린더가 열려 있다면 색상도 재계산
+
+### 6.7 캘린더 화면
+- 상단: "◀ / YYYY년 M월 / ▶" 이동 컨트롤, 현재 목표 칼로리 표시
+- 요일 헤더(일~토) + 날짜 그리드 (해당 월 1일의 요일에 맞춰 앞쪽 빈 칸 채움)
+- 각 날짜 칸: 날짜 숫자 + (기록 있으면) 총 칼로리 숫자, `getDayStatus()` 결과에 따라 클래스 부여
+- 오늘 날짜 칸은 테두리 등으로 별도 강조
+- 월 이동 시 `loadMonthLogs()`를 다시 호출해 그리드 갱신
+- 트래커 화면과 캘린더 화면은 같은 페이지 내 뷰 전환(탭/버튼)으로 처리, 별도 라우팅 라이브러리 없이 `hidden` 속성으로 토글
+
+### 6.8 날짜 상세 조회 (읽기 전용)
+- 캘린더의 날짜 칸 클릭 시 모달 또는 화면 하단 영역에 `loadLogsForDate()` 결과를 표시
+- 오늘 날짜가 아니면 삭제 버튼을 렌더링하지 않음 (조회 전용, PRD US-15/8.1)
+- 기록이 없는 날짜 클릭 시 "이 날은 기록이 없어요" 안내
 
 ---
 
@@ -312,6 +424,13 @@ async function deleteLog(logId) {
 | 항목 삭제 | 리스트에서 제거되고 총합이 즉시 재계산됨, DB에서도 삭제 확인 |
 | 세션 만료/로그아웃 상태에서 새로고침 | 로그인 화면으로 전환 |
 | 자정 넘겨서 접속 | 새 날짜 기준 빈 기록으로 시작, 이전 날짜 데이터는 DB에 유지 |
+| 목표 칼로리 설정 후 새로고침 | 설정한 값이 그대로 유지됨 (user_metadata 조회) |
+| 목표 미설정 상태에서 캘린더 진입 | 어떤 날짜도 노란색으로 표시되지 않음, 칼로리 숫자만 표시 |
+| 목표보다 높은 칼로리를 기록한 날 | 해당 날짜 칸이 노란색으로 표시됨 |
+| 목표를 낮춘 뒤 과거 달력 재조회 | 기존에 "이내"였던 날짜가 새 목표 기준으로 "초과"(노란색)로 바뀔 수 있음 (의도된 동작, PRD 8.1) |
+| 이전/다음 달 이동 | 해당 월의 로그를 다시 조회해 그리드가 올바르게 갱신됨 |
+| 기록 없는 날짜 클릭 | "이 날은 기록이 없어요" 안내 표시 |
+| 오늘이 아닌 날짜의 상세 조회 화면 | 삭제 버튼이 보이지 않음 (조회 전용) |
 
 ---
 
@@ -320,5 +439,7 @@ async function deleteLog(logId) {
 - 소셜 로그인: Supabase Auth Providers(Google 등) 설정만으로 확장 가능, 프론트 코드 변경 최소화.
 - 실시간 동기화: Supabase Realtime 구독(`supabase.channel(...)`)으로 기기 간 즉시 반영 가능.
 - 외부 영양성분 API로 전환 시 `foods.json` 로딩 부분만 API 호출로 교체하면 되도록 검색/계산 로직과 데이터 소스를 분리해서 구현.
-- 날짜별 히스토리: `log_date`로 이미 구조화되어 있으므로 조회 UI(달력, 기간 선택)만 추가하면 됨.
+- 탄/단/지 개별 목표: `user_metadata`에 `daily_carbs_goal` 등 필드를 추가하고 캘린더 색상 판정 로직을 다중 조건으로 확장하면 됨.
+- 목표 변경 이력 관리: 지금은 목표를 하나의 값으로만 저장해 과거 판정에도 소급 적용되므로, 특정 시점 기준으로 고정하려면 `goal_history` 같은 별도 테이블(적용 시작일 포함)이 필요함.
+- 과거 기록 수정 허용: `logs`에 `update` RLS 정책을 추가하고 UI에서 오늘 여부에 따른 버튼 숨김 조건(6.8)을 제거하면 됨.
 - 사진 기반 음식 인식: 지금의 "정적 프론트엔드 + Supabase" 구조에 서버리스 함수(Supabase Edge Function 등)를 추가해, 이미지 업로드 → Edge Function이 비전 AI API를 호출(API 키는 서버 측에만 보관) → 인식된 음식명/추정 영양성분을 검색 결과처럼 반환 → 사용자가 확인/수정 후 기존 "기록에 추가" 흐름에 그대로 태우는 방식으로 확장 가능.

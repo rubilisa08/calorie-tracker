@@ -65,6 +65,23 @@ function showAuthMessage(text) {
   authMessage.hidden = !text;
 }
 
+// 비밀번호 정책: 8자 이상 + 대문자/소문자/숫자/특수문자 중 3종류 이상 포함
+// (실제 최종 검증과 유출 비밀번호 차단은 Supabase Auth 설정에서 서버 측으로 강제됨)
+function checkPasswordPolicy(password) {
+  if (password.length < 8) {
+    return "비밀번호는 8자 이상이어야 해요.";
+  }
+
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^a-zA-Z0-9]/];
+  const matched = classes.filter((re) => re.test(password)).length;
+
+  if (matched < 3) {
+    return "비밀번호에 대문자·소문자·숫자·특수문자 중 3종류 이상을 포함해주세요.";
+  }
+
+  return null;
+}
+
 // ---- 음식 데이터 로드 ----
 async function loadFoods() {
   const res = await fetch("data/foods.json");
@@ -311,8 +328,15 @@ signupForm.addEventListener("submit", async (e) => {
     return;
   }
 
+  const policyError = checkPasswordPolicy(password);
+  if (policyError) {
+    showAuthMessage(policyError);
+    return;
+  }
+
   const { data, error } = await client.auth.signUp({ email, password });
   if (error) {
+    // 유출된 비밀번호(HaveIBeenPwned 연동) 등 서버 측 정책 위반도 이 메시지로 표시됨
     showAuthMessage("회원가입에 실패했어요: " + error.message);
     return;
   }
