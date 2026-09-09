@@ -20,6 +20,7 @@ const sumCarbsEl = document.getElementById("sum-carbs");
 const sumProteinEl = document.getElementById("sum-protein");
 const sumFatEl = document.getElementById("sum-fat");
 
+const searchInputCard = document.getElementById("search-input-card");
 const foodSearchInput = document.getElementById("food-search");
 const searchResultsEl = document.getElementById("search-results");
 const selectedFoodBox = document.getElementById("selected-food");
@@ -29,8 +30,20 @@ const amountInput = document.getElementById("amount-input");
 const previewEl = document.getElementById("preview");
 const addBtn = document.getElementById("add-btn");
 
+const showManualEntryLink = document.getElementById("show-manual-entry");
+const manualForm = document.getElementById("manual-form");
+const manualNameInput = document.getElementById("manual-name");
+const manualCaloriesInput = document.getElementById("manual-calories");
+const manualCarbsInput = document.getElementById("manual-carbs");
+const manualProteinInput = document.getElementById("manual-protein");
+const manualFatInput = document.getElementById("manual-fat");
+const manualAddBtn = document.getElementById("manual-add-btn");
+const manualCancelBtn = document.getElementById("manual-cancel-btn");
+
 const logListEl = document.getElementById("log-list");
 const logEmptyEl = document.getElementById("log-empty");
+
+const goalRemainingEl = document.getElementById("goal-remaining");
 
 const goalDisplayEl = document.getElementById("goal-display");
 const editGoalBtn = document.getElementById("edit-goal-btn");
@@ -79,6 +92,33 @@ function getFoodEmoji(foodId) {
   return foods.find((f) => f.id === foodId)?.emoji || "🍽️";
 }
 
+// ---- 한글 초성 검색 ----
+// "ㄱㅊㅈㄲ" 처럼 초성만으로 입력해도 "김치찌개"가 검색되도록 지원.
+const CHOSUNG_LIST = [
+  "ㄱ", "ㄲ", "ㄴ", "ㄷ", "ㄸ", "ㄹ", "ㅁ", "ㅂ", "ㅃ", "ㅅ",
+  "ㅆ", "ㅇ", "ㅈ", "ㅉ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ",
+];
+
+function getChosung(str) {
+  let result = "";
+  for (const ch of str) {
+    const code = ch.charCodeAt(0) - 0xac00;
+    result += code >= 0 && code <= 11171 ? CHOSUNG_LIST[Math.floor(code / 588)] : ch;
+  }
+  return result;
+}
+
+function isChosungOnlyQuery(str) {
+  return /^[ㄱ-ㅎ]+$/.test(str);
+}
+
+function matchesFoodQuery(food, query) {
+  if (isChosungOnlyQuery(query)) {
+    return getChosung(food.name).includes(query);
+  }
+  return food.name.includes(query);
+}
+
 function calcNutrition(food, amountG) {
   const ratio = amountG / 100;
   return {
@@ -124,7 +164,7 @@ function renderSearchResults(query) {
 
   if (!trimmed) return;
 
-  const matches = foods.filter((f) => f.name.includes(trimmed)).slice(0, 10);
+  const matches = foods.filter((f) => matchesFoodQuery(f, trimmed)).slice(0, 10);
 
   if (matches.length === 0) {
     const li = document.createElement("li");
@@ -187,6 +227,64 @@ function resetFoodInput() {
   addBtn.disabled = true;
 }
 
+// ---- 음식 직접 입력 (foods.json 164개 목록에 없는 음식용) ----
+// foods.json에 새 음식으로 등록되는 것이 아니라, 그날의 기록에 1회성으로 저장된다 (검색 결과에는 나오지 않음).
+function resetManualForm() {
+  manualForm.reset();
+  manualAddBtn.disabled = false; // form.reset()은 값만 되돌릴 뿐 수동으로 설정한 disabled는 풀어주지 않음
+}
+
+function showManualForm() {
+  resetFoodInput();
+  searchInputCard.hidden = true;
+  manualForm.hidden = false;
+  manualNameInput.focus();
+}
+
+function hideManualForm() {
+  manualForm.hidden = true;
+  searchInputCard.hidden = false;
+  resetManualForm();
+}
+
+async function addManualLog() {
+  const name = manualNameInput.value.trim();
+  const calories = Number(manualCaloriesInput.value);
+
+  if (!name || manualCaloriesInput.value === "" || Number.isNaN(calories) || calories < 0) return;
+  if (manualAddBtn.disabled) return; // 연타로 인한 중복 기록 방지
+
+  const carbs = manualCarbsInput.value === "" ? 0 : Number(manualCarbsInput.value);
+  const protein = manualProteinInput.value === "" ? 0 : Number(manualProteinInput.value);
+  const fat = manualFatInput.value === "" ? 0 : Number(manualFatInput.value);
+
+  if ([carbs, protein, fat].some((v) => Number.isNaN(v) || v < 0)) return;
+
+  manualAddBtn.disabled = true;
+
+  const { error } = await client.from("logs").insert({
+    user_id: currentUser.id,
+    food_id: `custom_${crypto.randomUUID()}`,
+    food_name: name,
+    amount_g: 1, // 직접 입력은 g 기준 비례 계산이 아니라 총량을 그대로 기록하므로 더미 값
+    calories,
+    carbs,
+    protein,
+    fat,
+    log_date: getLocalDateString(),
+  });
+
+  if (error) {
+    console.error(error);
+    alert("기록 추가에 실패했어요. 잠시 후 다시 시도해주세요.");
+    manualAddBtn.disabled = false;
+    return;
+  }
+
+  hideManualForm();
+  await loadTodayLogs();
+}
+
 // ---- 오늘의 기록 (Supabase) ----
 async function loadTodayLogs() {
   const today = getLocalDateString();
@@ -211,30 +309,143 @@ function renderLogs() {
   logEmptyEl.hidden = currentLogs.length !== 0;
 
   for (const log of currentLogs) {
-    const li = document.createElement("li");
-    li.className = "log-item";
-
-    const nameBox = document.createElement("div");
-    nameBox.className = "log-name";
-    nameBox.innerHTML = `<span class="log-food">${getFoodEmoji(log.food_id)} ${log.food_name}</span><span class="log-amount">${log.amount_g}g</span>`;
-
-    const nutritionBox = document.createElement("div");
-    nutritionBox.className = "log-nutrition";
-    nutritionBox.innerHTML = `<span class="log-calories">${log.calories}kcal</span><br>탄${log.carbs} · 단${log.protein} · 지${log.fat}`;
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "delete-btn";
-    deleteBtn.textContent = "✕";
-    deleteBtn.addEventListener("click", () => deleteLog(log.id));
-
-    li.appendChild(nameBox);
-    li.appendChild(nutritionBox);
-    li.appendChild(deleteBtn);
-    logListEl.appendChild(li);
+    logListEl.appendChild(buildLogItem(log));
   }
 
   renderSummary();
+}
+
+function buildLogItem(log) {
+  const li = document.createElement("li");
+  li.className = "log-item";
+
+  const nameBox = document.createElement("div");
+  nameBox.className = "log-name";
+  nameBox.innerHTML = `<span class="log-food">${getFoodEmoji(log.food_id)} ${log.food_name}</span><span class="log-amount">${log.amount_g}g</span>`;
+
+  const nutritionBox = document.createElement("div");
+  nutritionBox.className = "log-nutrition";
+  nutritionBox.innerHTML = `<span class="log-calories">${log.calories}kcal</span><br>탄${log.carbs} · 단${log.protein} · 지${log.fat}`;
+
+  const actions = document.createElement("div");
+  actions.className = "log-actions";
+
+  const foodData = foods.find((f) => f.id === log.food_id);
+
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "edit-btn";
+  editBtn.textContent = "✎";
+  if (foodData) {
+    editBtn.title = "섭취량 수정";
+    editBtn.addEventListener("click", () => enterEditMode(li, log, foodData));
+  } else {
+    editBtn.disabled = true;
+    editBtn.title = "이 음식은 더 이상 데이터에 없어 수정할 수 없어요";
+  }
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "delete-btn";
+  deleteBtn.textContent = "✕";
+  deleteBtn.addEventListener("click", () => deleteLog(log.id));
+
+  actions.appendChild(editBtn);
+  actions.appendChild(deleteBtn);
+
+  li.appendChild(nameBox);
+  li.appendChild(nutritionBox);
+  li.appendChild(actions);
+  return li;
+}
+
+// 삭제 후 재검색/재추가 대신, 오늘 기록의 섭취량만 바로 고칠 수 있도록 인라인 수정 모드로 전환.
+function enterEditMode(li, log, foodData) {
+  li.innerHTML = "";
+  li.classList.add("log-item-editing");
+
+  const nameRow = document.createElement("div");
+  nameRow.className = "log-name";
+  nameRow.innerHTML = `<span class="log-food">${getFoodEmoji(log.food_id)} ${log.food_name}</span>`;
+
+  const editRow = document.createElement("div");
+  editRow.className = "edit-row";
+
+  const amountInputEl = document.createElement("input");
+  amountInputEl.type = "number";
+  amountInputEl.min = "1";
+  amountInputEl.step = "1";
+  amountInputEl.value = log.amount_g;
+
+  const gLabel = document.createElement("span");
+  gLabel.textContent = "g";
+
+  const previewSpan = document.createElement("span");
+  previewSpan.className = "edit-preview";
+
+  const actionsRow = document.createElement("div");
+  actionsRow.className = "edit-actions";
+
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.textContent = "저장";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "secondary-btn";
+  cancelBtn.textContent = "취소";
+  cancelBtn.addEventListener("click", renderLogs); // 편집 취소 → 현재 데이터로 목록 다시 그림
+
+  function updateEditPreview() {
+    const amount = Number(amountInputEl.value);
+    if (!amount || amount <= 0) {
+      previewSpan.textContent = "";
+      saveBtn.disabled = true;
+      return;
+    }
+    const n = calcNutrition(foodData, amount);
+    previewSpan.textContent = `→ ${n.calories}kcal / 탄${n.carbs}·단${n.protein}·지${n.fat}`;
+    saveBtn.disabled = false;
+  }
+
+  amountInputEl.addEventListener("input", updateEditPreview);
+
+  saveBtn.addEventListener("click", async () => {
+    const amount = Number(amountInputEl.value);
+    if (!amount || amount <= 0 || saveBtn.disabled) return;
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+    await updateLog(log.id, foodData, amount);
+  });
+
+  editRow.appendChild(amountInputEl);
+  editRow.appendChild(gLabel);
+  editRow.appendChild(previewSpan);
+  actionsRow.appendChild(saveBtn);
+  actionsRow.appendChild(cancelBtn);
+
+  li.appendChild(nameRow);
+  li.appendChild(editRow);
+  li.appendChild(actionsRow);
+
+  updateEditPreview();
+  amountInputEl.focus();
+}
+
+async function updateLog(id, foodData, amount) {
+  const n = calcNutrition(foodData, amount);
+
+  const { error } = await client
+    .from("logs")
+    .update({ amount_g: amount, calories: n.calories, carbs: n.carbs, protein: n.protein, fat: n.fat })
+    .eq("id", id);
+
+  if (error) {
+    console.error(error);
+    alert("수정에 실패했어요. 잠시 후 다시 시도해주세요.");
+  }
+
+  await loadTodayLogs();
 }
 
 function renderSummary() {
@@ -253,13 +464,40 @@ function renderSummary() {
   sumCarbsEl.textContent = round1(totals.carbs);
   sumProteinEl.textContent = round1(totals.protein);
   sumFatEl.textContent = round1(totals.fat);
+
+  renderGoalRemaining(totals.calories);
+}
+
+// ---- 목표까지 남은 칼로리 ----
+function renderGoalRemaining(totalCalories) {
+  if (currentGoal == null) {
+    goalRemainingEl.hidden = true;
+    goalRemainingEl.textContent = "";
+    goalRemainingEl.classList.remove("goal-over");
+    return;
+  }
+
+  const diff = currentGoal - Math.round(totalCalories);
+  goalRemainingEl.hidden = false;
+
+  if (diff >= 0) {
+    goalRemainingEl.classList.remove("goal-over");
+    goalRemainingEl.textContent = `목표까지 ${diff}kcal 남았어요`;
+  } else {
+    goalRemainingEl.classList.add("goal-over");
+    goalRemainingEl.textContent = `목표를 ${Math.abs(diff)}kcal 초과했어요`;
+  }
 }
 
 async function addLog() {
   const amount = Number(amountInput.value);
   if (!selectedFood || !amount || amount <= 0) return;
 
+  if (addBtn.disabled) return; // 이미 처리 중 — 연타로 인한 중복 기록 방지
+
   const n = calcNutrition(selectedFood, amount);
+
+  addBtn.disabled = true;
 
   const { error } = await client.from("logs").insert({
     user_id: currentUser.id,
@@ -276,6 +514,7 @@ async function addLog() {
   if (error) {
     console.error(error);
     alert("기록 추가에 실패했어요. 잠시 후 다시 시도해주세요.");
+    updatePreview(); // 현재 선택 상태 기준으로 버튼 활성화 여부 다시 계산
     return;
   }
 
@@ -314,6 +553,7 @@ async function saveGoal(value) {
   }
   currentGoal = data.user.user_metadata?.daily_calorie_goal ?? null;
   renderGoalDisplay();
+  renderSummary();
   if (!calendarView.hidden) renderCalendar();
 }
 
@@ -437,8 +677,9 @@ function switchToCalendarView() {
   trackerView.hidden = true;
   calendarView.hidden = false;
   dayDetailEl.hidden = true;
-  calendarYear = today.getFullYear();
-  calendarMonth = today.getMonth() + 1;
+  const now = new Date(); // 자정을 넘겨 페이지가 오래 열려 있었을 수 있으므로 매번 새로 계산
+  calendarYear = now.getFullYear();
+  calendarMonth = now.getMonth() + 1;
   renderCalendar();
 }
 
@@ -465,6 +706,7 @@ async function showTrackerView(user) {
 
   loadGoal(user);
   goalForm.hidden = true;
+  hideManualForm();
   resetFoodInput();
   await loadTodayLogs();
 }
@@ -551,6 +793,19 @@ amountInput.addEventListener("input", updatePreview);
 
 addBtn.addEventListener("click", addLog);
 
+// ---- 음식 직접 입력 이벤트 ----
+showManualEntryLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  showManualForm();
+});
+
+manualCancelBtn.addEventListener("click", hideManualForm);
+
+manualForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  addManualLog();
+});
+
 // ---- 목표 칼로리 이벤트 ----
 editGoalBtn.addEventListener("click", () => {
   goalInput.value = currentGoal ?? "";
@@ -603,5 +858,35 @@ client.auth.onAuthStateChange((event, session) => {
   }
 });
 
+// ---- 자정 경계 처리 ----
+// 자정이 지나도 새로고침 없이는 화면이 어제 날짜 그대로 남아있던 문제를 해결.
+// 다음 자정(+5초 여유)까지 걸리는 시간을 계산해 그 시점에 화면을 갱신하고, 다시 다음 자정을 예약한다.
+function scheduleMidnightRefresh() {
+  const now = new Date();
+  const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+  const ms = nextMidnight.getTime() - now.getTime();
+
+  setTimeout(async () => {
+    if (currentUser) {
+      todayDateEl.textContent = getLocalDateString();
+
+      if (!trackerView.hidden) {
+        hideManualForm();
+        resetFoodInput();
+        await loadTodayLogs();
+      } else if (!calendarView.hidden) {
+        const refreshedNow = new Date();
+        if (calendarYear === refreshedNow.getFullYear() && calendarMonth === refreshedNow.getMonth() + 1) {
+          dayDetailEl.hidden = true;
+          await renderCalendar();
+        }
+      }
+    }
+
+    scheduleMidnightRefresh();
+  }, ms);
+}
+
 // ---- 시작 ----
 loadFoods();
+scheduleMidnightRefresh();

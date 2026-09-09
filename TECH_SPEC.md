@@ -134,10 +134,16 @@ create policy "insert own logs"
 create policy "delete own logs"
   on logs for delete
   using (auth.uid() = user_id);
+
+create policy "update own logs"
+  on logs for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 ```
 
-- `update` 정책은 MVP에서 기록 수정 기능이 없으므로 생성하지 않음(필요 시 추후 추가). 캘린더에서 과거 날짜를 조회 전용으로 두는 PRD 8.1 제약과도 일치 — `logs`에 update 정책이 없으므로 과거 기록은 애초에 수정이 불가능하다.
+- `update` 정책은 delete 정책과 동일한 설계 — DB는 "본인 것인지"만 강제하고, "오늘 기록만 수정 가능"은 UI에서 강제한다(과거 날짜 상세 화면엔 수정/삭제 버튼 자체를 렌더링하지 않음, 6.8/5.13 참고). 캘린더에서 과거 날짜를 조회 전용으로 두는 PRD 8.1 제약과 UI 레벨에서 일치시킨 것.
 - RLS 없이 배포하면 **다른 사용자의 기록이 노출되는 심각한 보안 문제**가 발생하므로, 배포 전 반드시 RLS 활성화 + 정책 적용을 확인한다 (PRD 8.3 리스크 참고).
+- RLS는 "누구 것인지"만 보장할 뿐 "값이 정상적인지"는 보장하지 않는다 — 프론트엔드는 항상 정상 계산해서 보내지만, 브라우저 devtools로 API를 직접 호출하면 음수/조작된 영양성분 값도 저장될 수 있다. 이를 막기 위해 `calories`, `carbs`, `protein`, `fat`에도 `amount_g`와 동일하게 `check (... >= 0)` 제약을 추가했다 ([supabase/setup.sql](supabase/setup.sql) 참고, 이미 배포한 프로젝트는 파일 하단의 마이그레이션 블록 실행 필요).
 
 ### 3.5 목표 칼로리 — Supabase Auth user metadata
 새 테이블을 만들지 않고, 각 사용자의 `auth.users` 레코드에 딸린 `user_metadata`(JSON)에 목표 칼로리를 저장한다.
@@ -254,14 +260,56 @@ async function deleteLog(logId) {
 }
 ```
 
-### 5.6 하루 총합 계산
-- 로드된 오늘 기록 배열을 `reduce`하여 칼로리/탄/단/지 합계를 클라이언트에서 계산 (DB 집계 쿼리 없이 단순 합산으로 충분).
+### 5.5-1 기록 수정 (오늘 기록의 섭취량만)
+삭제 후 재검색·재입력하지 않아도, 오늘 기록 항목을 클릭 한 번으로 인라인 수정 모드로 전환해 섭취량만 바로 고칠 수 있다.
+```js
+async function updateLog(logId, foodData, amountG) {
+  const n = calcNutrition(foodData, amountG); // foods.json의 현재 100g당 값으로 재계산
+  const { error } = await supabase
+    .from('logs')
+    .update({ amount_g: amountG, calories: n.calories, carbs: n.carbs, protein: n.protein, fat: n.fat })
+    .eq('id', logId);
+  // RLS의 update 정책이 본인 소유 행만 수정되도록 보장
+}
+```
+- 수정 시 영양성분은 기록 당시 값이 아니라 **현재 `foods.json`의 100g당 값**으로 다시 계산한다 (addLog와 동일한 계산 경로 재사용).
+- 편집 UI를 그릴 때 `food_id`가 현재 `foods.json`에 없는 경우(음식 데이터가 나중에 제거된 경우) 수정 버튼을 비활성화하고 삭제만 허용한다 — 재계산에 필요한 100g당 값을 알 수 없기 때문.
+- 오늘이 아닌 날짜의 기록에는 애초에 이 버튼을 렌더링하지 않는다(6.8 참고, PRD 8.1과 일치).
 
-### 5.7 음식 검색 (변경 없음)
-- `foods.json`을 앱 로드 시 1회 `fetch`하여 메모리 배열로 보관, `name.includes(query)`로 클라이언트 사이드 필터링.
+### 5.5-2 음식 직접 입력 (2026-09-09 추가)
+`foods.json`의 164개 목록에 없는 음식을 위한 수동 기록 경로. **PRD 3.2의 "사용자가 새 음식을 직접 등록하는 기능"(Won't Have)과는 다르다** — `foods.json`이라는 공용 데이터베이스에 영구 등록되는 게 아니라, 그날의 `logs`에 1회성으로 저장되는 기록일 뿐이며 검색 결과에는 나타나지 않는다.
+- 입력 항목: 음식 이름(필수), 칼로리(필수), 탄수화물/단백질/지방(선택 — 비워두면 0으로 저장).
+- 100g당 값 기반 비례 계산을 하지 않으므로 `amount_g`는 의미가 없어 더미 값 `1`을 저장한다.
+- `food_id`는 `foods.json`과 겹치지 않도록 `custom_<uuid>` 형태로 생성 — 검색/캘린더 로직은 `food_id`를 `foods` 배열에서 찾아 이모지·수정 가능 여부를 판단하므로(5.5-1), 커스텀 기록은 자동으로 "수정 불가"(삭제 후 재입력만 가능) 상태가 된다.
+```js
+async function addManualLog(name, calories, carbs, protein, fat) {
+  const { error } = await supabase.from('logs').insert({
+    user_id, food_id: `custom_${crypto.randomUUID()}`, food_name: name,
+    amount_g: 1, calories, carbs, protein, fat, log_date: getLocalDateString(),
+  });
+}
+```
+
+### 5.6 하루 총합 계산 및 목표까지 남은 칼로리
+- 로드된 오늘 기록 배열을 `reduce`하여 칼로리/탄/단/지 합계를 클라이언트에서 계산 (DB 집계 쿼리 없이 단순 합산으로 충분).
+- 합계 계산 직후 `renderGoalRemaining(totalCalories)`를 호출해 목표 대비 잔여/초과 칼로리를 한 줄로 표시한다 (목표 미설정 시 표시하지 않음). 캘린더의 월 단위 초과 표시(5.11)와 달리, 트래커 화면에서 실시간으로 "오늘" 기준 즉각적인 피드백을 준다.
+```js
+function renderGoalRemaining(totalCalories) {
+  if (currentGoal == null) { /* 표시 안 함 */ return; }
+  const diff = currentGoal - Math.round(totalCalories);
+  // diff >= 0 → "목표까지 {diff}kcal 남았어요"
+  // diff < 0  → "목표를 {|diff|}kcal 초과했어요" (강조 스타일)
+}
+```
+
+### 5.7 음식 검색 — 초성 검색 지원
+- `foods.json`을 앱 로드 시 1회 `fetch`하여 메모리 배열로 보관.
+- 기본은 `name.includes(query)` 부분 문자열 매칭이지만, 입력값이 초성(ㄱ~ㅎ)으로만 이루어진 경우(`isChosungOnlyQuery`) 음식명에서 초성만 추출한 문자열(`getChosung`)과 비교해 매칭한다. 예: "ㄱㅊㅈㄲ" 입력 시 "김치찌개"가 검색됨.
+- 완성형 한글(가~힣) 한 글자당 초성 하나를 추출하고, 한글이 아닌 문자(영문/숫자/공백 등)는 그대로 통과시킨다.
 
 ### 5.8 날짜 기준
 - `log_date`는 서버(UTC) 기준이 아니라 **클라이언트 로컬 날짜**를 문자열로 계산해 전달 (`new Date().toLocaleDateString('sv-SE')` 형태로 `YYYY-MM-DD` 생성) — 사용자가 실제로 인지하는 "오늘"과 일치시키기 위함.
+- 앱을 켜둔 채로 자정을 넘기면 화면이 어제 날짜 그대로 남는 문제가 있어, 다음 자정(+5초 여유)까지의 시간을 계산해 `setTimeout`으로 예약하고 그 시점에 오늘의 기록/캘린더를 다시 불러오도록 처리했다 (`scheduleMidnightRefresh`, [app.js](app.js) 참고). 매번 갱신 후 다음 자정을 다시 예약하는 재귀 방식이다.
 
 ### 5.9 목표 칼로리 설정/조회
 ```js
