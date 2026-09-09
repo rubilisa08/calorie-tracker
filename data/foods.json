@@ -43,7 +43,7 @@
   { "id": "cherry_tomato", "name": "방울토마토", "emoji": "🍅", "category": "채소", "caloriesPer100g": 18, "carbsPer100g": 3.9, "proteinPer100g": 0.9, "fatPer100g": 0.2, "commonServingG": 100, "commonServingLabel": "10알" },
   { "id": "carrot", "name": "당근", "emoji": "🥕", "category": "채소", "caloriesPer100g": 41, "carbsPer100g": 9.6, "proteinPer100g": 0.9, "fatPer100g": 0.2, "commonServingG": 70, "commonServingLabel": "1/2개" },
   { "id": "zucchini", "name": "애호박", "emoji": "🥒", "category": "채소", "caloriesPer100g": 17, "carbsPer100g": 3.1, "proteinPer100g": 1.2, "fatPer100g": 0.2, "commonServingG": 100, "commonServingLabel": "1/4개" },
-  { "id": "bean_sprout_boiled", "name": "콩나물(데침)", "emoji": "🌱", "category": "채소", "caloriesPer100g": 27, "carbsPer100g": 3.9, "proteinPer100g": 3.6, "fatPer100g": 0.5, "commonServingG": 70, "commonServingLabel": "1인분" },
+  { "id": "bean_sprout_boiled", "name": "콩나물(데침)", "emoji": "🌱", "category": "채소", "caloriesPer100g": 34, "carbsPer100g": 3.8, "proteinPer100g": 4.2, "fatPer100g": 1.0, "commonServingG": 70, "commonServingLabel": "1인분" },
   { "id": "radish_salad", "name": "무생채", "emoji": "🥗", "category": "채소", "caloriesPer100g": 45, "carbsPer100g": 9, "proteinPer100g": 1, "fatPer100g": 0.5, "commonServingG": 80, "commonServingLabel": "1인분" },
   { "id": "seaweed_raw", "name": "미역(생)", "emoji": "🌿", "category": "채소", "caloriesPer100g": 45, "carbsPer100g": 9.1, "proteinPer100g": 3, "fatPer100g": 0.6, "commonServingG": 50, "commonServingLabel": "1인분" },
   { "id": "dried_laver", "name": "김(구운 김)", "emoji": "🟩", "category": "채소", "caloriesPer100g": 210, "carbsPer100g": 20, "proteinPer100g": 38, "fatPer100g": 5, "commonServingG": 2, "commonServingLabel": "1장" },
