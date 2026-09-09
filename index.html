@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>칼로리 트래커</title>
-  <link rel="stylesheet" href="style.css?v=3" />
+  <link rel="stylesheet" href="style.css?v=4" />
 </head>
 <body>
   <main>
@@ -83,9 +83,9 @@
           <p id="selected-food-name" class="selected-food-name"></p>
           <p id="selected-food-base" class="selected-food-base"></p>
           <label class="amount-label">
-            섭취량
+            <span id="amount-label-text">섭취량</span>
             <input id="amount-input" type="number" min="1" step="1" />
-            g
+            <span id="amount-unit-text">g</span>
           </label>
           <p id="preview" class="preview"></p>
           <button id="add-btn" type="button" disabled>기록에 추가</button>
@@ -149,6 +149,6 @@
   <!-- Supabase JS 라이브러리 (CDN, 빌드 도구 불필요) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabaseClient.js?v=1"></script>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

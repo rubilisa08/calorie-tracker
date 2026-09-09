@@ -290,6 +290,24 @@ async function addManualLog(name, calories, carbs, protein, fat) {
 }
 ```
 
+### 5.5-3 "몇 인분/개" 개수 단위 입력 (2026-09-09 추가)
+찌개·국밥·디저트·프랜차이즈 음식처럼 그램으로 재는 게 부자연스러운 음식을 위해, `foods.json` 항목에 `unitType: "count"`를 표시하면 그램 입력 대신 "몇 인분/조각/개"를 입력받는다. **국·찌개, 배달·프랜차이즈, 디저트, 유행음식 4개 카테고리(84개)에 소급 적용**했고, 신규 추가 음식도 카테고리별로 이 값을 부여한다. `주식·단백질·채소·과일·유제품·음료`처럼 실제로 그램 단위 정밀 기록이 의미 있는 카테고리는 그대로 그램 입력(`unitType` 필드 없음, 기본값)을 유지한다.
+
+- DB 스키마 변경 없음 — `logs.amount_g`는 항상 그램으로 저장하고, `commonServingG × 입력한 개수`로 환산해서 넣는다. 화면에 표시할 때만 반대로 `amount_g ÷ commonServingG`로 되돌려 "1.5인분"처럼 보여준다(`formatAmountDisplay`).
+- `commonServingLabel`(예: `"1인분"`, `"2줄"`)은 수량이 포함된 서술형 문자열이라, 입력값 뒤에 그대로 이어붙이면 `"1.51인분"`처럼 숫자가 겹친다. 앞의 숫자(분수 포함, 예: `"1/4모"`)를 정규식으로 떼어낸 단위 이름만 별도로 뽑아 쓴다(`getUnitName`).
+- 검색 결과 리스트도 `unitType`에 따라 `"165kcal/100g"` 대신 `"495kcal/1인분"`으로 표시한다 — 100g 기준 숫자만 보고 "떡볶이가 165kcal밖에 안 되네"라고 오해하는 걸 막기 위함 (실사용자가 실제로 겪은 혼동).
+```js
+function getAmountGrams(food, inputValue) {
+  const value = Number(inputValue);
+  if (!value || value <= 0) return 0;
+  return food.unitType === "count" ? value * food.commonServingG : value;
+}
+
+function getUnitName(label) {
+  return label.replace(/^[0-9]+(\.[0-9]+)?(\/[0-9]+)?/, "") || label;
+}
+```
+
 ### 5.6 하루 총합 계산 및 목표까지 남은 칼로리
 - 로드된 오늘 기록 배열을 `reduce`하여 칼로리/탄/단/지 합계를 클라이언트에서 계산 (DB 집계 쿼리 없이 단순 합산으로 충분).
 - 합계 계산 직후 `renderGoalRemaining(totalCalories)`를 호출해 목표 대비 잔여/초과 칼로리를 한 줄로 표시한다 (목표 미설정 시 표시하지 않음). 캘린더의 월 단위 초과 표시(5.11)와 달리, 트래커 화면에서 실시간으로 "오늘" 기준 즉각적인 피드백을 준다.

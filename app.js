@@ -27,6 +27,8 @@ const selectedFoodBox = document.getElementById("selected-food");
 const selectedFoodNameEl = document.getElementById("selected-food-name");
 const selectedFoodBaseEl = document.getElementById("selected-food-base");
 const amountInput = document.getElementById("amount-input");
+const amountLabelText = document.getElementById("amount-label-text");
+const amountUnitText = document.getElementById("amount-unit-text");
 const previewEl = document.getElementById("preview");
 const addBtn = document.getElementById("add-btn");
 
@@ -182,13 +184,35 @@ function renderSearchResults(query) {
 
     const meta = document.createElement("span");
     meta.className = "result-meta";
-    meta.textContent = `${food.caloriesPer100g}kcal/100g`;
+    meta.textContent = isCountUnit(food)
+      ? `${Math.round((food.caloriesPer100g * food.commonServingG) / 100)}kcal/${food.commonServingLabel}`
+      : `${food.caloriesPer100g}kcal/100g`;
 
     li.appendChild(name);
     li.appendChild(meta);
     li.addEventListener("click", () => selectFood(food));
     searchResultsEl.appendChild(li);
   }
+}
+
+// ---- 그램 입력 vs "몇 인분/개" 같은 개수 입력 ----
+// 국밥·찌개·디저트처럼 그램으로 재는 게 부자연스러운 음식은 unitType: "count"로 표시해
+// "몇 인분(개/조각...)"을 입력받고, 내부적으로만 commonServingG를 곱해 그램으로 환산한다.
+function isCountUnit(food) {
+  return food.unitType === "count";
+}
+
+// commonServingLabel은 "1인분"/"2줄"처럼 수량이 포함된 서술형 문자열이라,
+// 입력값(예: 1.5) 뒤에 그대로 붙이면 "1.51인분"처럼 숫자가 겹친다.
+// 앞의 숫자를 떼어낸 단위 이름("인분", "줄")만 뽑아 쓴다.
+function getUnitName(label) {
+  return label.replace(/^[0-9]+(\.[0-9]+)?(\/[0-9]+)?/, "") || label;
+}
+
+function getAmountGrams(food, inputValue) {
+  const value = Number(inputValue);
+  if (!value || value <= 0) return 0;
+  return isCountUnit(food) ? value * food.commonServingG : value;
 }
 
 function selectFood(food) {
@@ -198,22 +222,42 @@ function selectFood(food) {
 
   selectedFoodBox.hidden = false;
   selectedFoodNameEl.textContent = `${food.emoji} ${food.name}`;
-  selectedFoodBaseEl.textContent = `100g당 ${food.caloriesPer100g}kcal · 탄${food.carbsPer100g}g · 단${food.proteinPer100g}g · 지${food.fatPer100g}g`;
 
-  amountInput.value = food.commonServingG;
+  if (isCountUnit(food)) {
+    const n = calcNutrition(food, food.commonServingG);
+    selectedFoodBaseEl.textContent = `${food.commonServingLabel}(${food.commonServingG}g) 기준 ${n.calories}kcal · 탄${n.carbs}g · 단${n.protein}g · 지${n.fat}g`;
+    amountLabelText.textContent = "수량";
+    amountUnitText.textContent = getUnitName(food.commonServingLabel);
+    amountInput.min = "0.5";
+    amountInput.step = "0.5";
+    amountInput.value = 1;
+  } else {
+    selectedFoodBaseEl.textContent = `100g당 ${food.caloriesPer100g}kcal · 탄${food.carbsPer100g}g · 단${food.proteinPer100g}g · 지${food.fatPer100g}g`;
+    amountLabelText.textContent = "섭취량";
+    amountUnitText.textContent = "g";
+    amountInput.min = "1";
+    amountInput.step = "1";
+    amountInput.value = food.commonServingG;
+  }
+
   updatePreview();
 }
 
 function updatePreview() {
-  const amount = Number(amountInput.value);
-
-  if (!selectedFood || !amount || amount <= 0) {
+  if (!selectedFood) {
     previewEl.textContent = "";
     addBtn.disabled = true;
     return;
   }
 
-  const n = calcNutrition(selectedFood, amount);
+  const amountG = getAmountGrams(selectedFood, amountInput.value);
+  if (!amountG) {
+    previewEl.textContent = "";
+    addBtn.disabled = true;
+    return;
+  }
+
+  const n = calcNutrition(selectedFood, amountG);
   previewEl.textContent = `→ 예상: ${n.calories}kcal / 탄${n.carbs}g · 단${n.protein}g · 지${n.fat}g`;
   addBtn.disabled = false;
 }
@@ -225,6 +269,10 @@ function resetFoodInput() {
   selectedFoodBox.hidden = true;
   previewEl.textContent = "";
   addBtn.disabled = true;
+  amountLabelText.textContent = "섭취량";
+  amountUnitText.textContent = "g";
+  amountInput.min = "1";
+  amountInput.step = "1";
 }
 
 // ---- 음식 직접 입력 (foods.json 164개 목록에 없는 음식용) ----
@@ -315,13 +363,24 @@ function renderLogs() {
   renderSummary();
 }
 
+// 국밥·찌개처럼 unitType이 "count"인 음식은 그램 대신 "1.5인분" 식으로 표시한다.
+function formatAmountDisplay(log) {
+  const foodData = foods.find((f) => f.id === log.food_id);
+  if (foodData && isCountUnit(foodData) && foodData.commonServingG > 0) {
+    const count = log.amount_g / foodData.commonServingG;
+    const countText = Number.isInteger(count) ? String(count) : round1(count).toString();
+    return `${countText}${getUnitName(foodData.commonServingLabel)}`;
+  }
+  return `${log.amount_g}g`;
+}
+
 function buildLogItem(log) {
   const li = document.createElement("li");
   li.className = "log-item";
 
   const nameBox = document.createElement("div");
   nameBox.className = "log-name";
-  nameBox.innerHTML = `<span class="log-food">${getFoodEmoji(log.food_id)} ${log.food_name}</span><span class="log-amount">${log.amount_g}g</span>`;
+  nameBox.innerHTML = `<span class="log-food">${getFoodEmoji(log.food_id)} ${log.food_name}</span><span class="log-amount">${formatAmountDisplay(log)}</span>`;
 
   const nutritionBox = document.createElement("div");
   nutritionBox.className = "log-nutrition";
@@ -371,14 +430,16 @@ function enterEditMode(li, log, foodData) {
   const editRow = document.createElement("div");
   editRow.className = "edit-row";
 
+  const isCount = isCountUnit(foodData);
+
   const amountInputEl = document.createElement("input");
   amountInputEl.type = "number";
-  amountInputEl.min = "1";
-  amountInputEl.step = "1";
-  amountInputEl.value = log.amount_g;
+  amountInputEl.min = isCount ? "0.5" : "1";
+  amountInputEl.step = isCount ? "0.5" : "1";
+  amountInputEl.value = isCount ? round1(log.amount_g / foodData.commonServingG) : log.amount_g;
 
   const gLabel = document.createElement("span");
-  gLabel.textContent = "g";
+  gLabel.textContent = isCount ? getUnitName(foodData.commonServingLabel) : "g";
 
   const previewSpan = document.createElement("span");
   previewSpan.className = "edit-preview";
@@ -397,13 +458,13 @@ function enterEditMode(li, log, foodData) {
   cancelBtn.addEventListener("click", renderLogs); // 편집 취소 → 현재 데이터로 목록 다시 그림
 
   function updateEditPreview() {
-    const amount = Number(amountInputEl.value);
-    if (!amount || amount <= 0) {
+    const amountG = getAmountGrams(foodData, amountInputEl.value);
+    if (!amountG) {
       previewSpan.textContent = "";
       saveBtn.disabled = true;
       return;
     }
-    const n = calcNutrition(foodData, amount);
+    const n = calcNutrition(foodData, amountG);
     previewSpan.textContent = `→ ${n.calories}kcal / 탄${n.carbs}·단${n.protein}·지${n.fat}`;
     saveBtn.disabled = false;
   }
@@ -411,11 +472,11 @@ function enterEditMode(li, log, foodData) {
   amountInputEl.addEventListener("input", updateEditPreview);
 
   saveBtn.addEventListener("click", async () => {
-    const amount = Number(amountInputEl.value);
-    if (!amount || amount <= 0 || saveBtn.disabled) return;
+    const amountG = getAmountGrams(foodData, amountInputEl.value);
+    if (!amountG || saveBtn.disabled) return;
     saveBtn.disabled = true;
     cancelBtn.disabled = true;
-    await updateLog(log.id, foodData, amount);
+    await updateLog(log.id, foodData, amountG);
   });
 
   editRow.appendChild(amountInputEl);
@@ -490,12 +551,13 @@ function renderGoalRemaining(totalCalories) {
 }
 
 async function addLog() {
-  const amount = Number(amountInput.value);
-  if (!selectedFood || !amount || amount <= 0) return;
+  if (!selectedFood) return;
+  const amountG = getAmountGrams(selectedFood, amountInput.value);
+  if (!amountG) return;
 
   if (addBtn.disabled) return; // 이미 처리 중 — 연타로 인한 중복 기록 방지
 
-  const n = calcNutrition(selectedFood, amount);
+  const n = calcNutrition(selectedFood, amountG);
 
   addBtn.disabled = true;
 
@@ -503,7 +565,7 @@ async function addLog() {
     user_id: currentUser.id,
     food_id: selectedFood.id,
     food_name: selectedFood.name,
-    amount_g: amount,
+    amount_g: amountG,
     calories: n.calories,
     carbs: n.carbs,
     protein: n.protein,
@@ -660,7 +722,7 @@ async function openDayDetail(dateStr) {
 
     const nameBox = document.createElement("div");
     nameBox.className = "log-name";
-    nameBox.innerHTML = `<span class="log-food">${getFoodEmoji(log.food_id)} ${log.food_name}</span><span class="log-amount">${log.amount_g}g</span>`;
+    nameBox.innerHTML = `<span class="log-food">${getFoodEmoji(log.food_id)} ${log.food_name}</span><span class="log-amount">${formatAmountDisplay(log)}</span>`;
 
     const nutritionBox = document.createElement("div");
     nutritionBox.className = "log-nutrition";
